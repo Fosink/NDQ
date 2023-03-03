@@ -25,7 +25,7 @@ class IBFComm(nn.Module):
 		x = F.relu(self.fc1(inputs))
 		x = F.relu(self.fc2(x))
 		gaussian_params = self.fc3(x)
-
+		# gaussian_params 向量代表了每个智能体的通信分布参数（均值和标准差）。在这个方法中，标准差sigma被硬编码为1，均值mu是gaussian_params本身
 		mu = gaussian_params
 		#sigma = F.softplus(gaussian_params[:, self.args.comm_embed_dim * self.n_agents:])
 		sigma = th.ones(mu.shape).cuda()
