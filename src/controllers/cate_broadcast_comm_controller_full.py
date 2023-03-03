@@ -122,6 +122,7 @@ class CateBCommFMAC:
 			(mu, sigma), messages, m_sample = self._test_communicate(ep_batch.batch_size, agent_inputs,
 			                                                         thres=thres, prob=prob)
 			agent_inputs = th.cat([agent_inputs, messages], dim=1)
+			# 使用_logits函数计算正态分布的概率密度函数
 			logits = self._logits(ep_batch.batch_size, agent_inputs)
 
 		avail_actions = ep_batch["avail_actions"][:, t]
@@ -134,6 +135,8 @@ class CateBCommFMAC:
 			sigma = sigma.view(ep_batch.batch_size, self.n_agents, -1)
 			logits = logits.view(ep_batch.batch_size, self.n_agents, -1)
 			m_sample = m_sample.view(ep_batch.batch_size, self.n_agents, -1)
+			# agent_outs，它是智能体的输出；(mu, sigma)，它是从其他智能体接收到的信息的均值和标准差；
+			# logits，它是动作的概率分布；m_sample，它是使用接收到的信息ms生成的样本
 			return agent_outs, (mu, sigma), logits, m_sample
 		else:
 			return agent_outs.view(ep_batch.batch_size, self.n_agents, -1)
@@ -246,7 +249,7 @@ class CateBCommFMAC:
 			return input_shape + ms_shape, input_shape
 		else:
 			return input_shape
-
+	# _cut_mu()方法根据一定规则修剪均值向量mu中的元素，并将修剪后的结果保存在ms中并返回。
 	def _cut_mu(self, mu, ms, thres=0., prob=0.):
 		mu = mu.detach().cpu()
 		ms = ms.detach().cpu()
@@ -261,6 +264,7 @@ class CateBCommFMAC:
 			ms[rank < thres] = 0.
 		else:
 			#r_thres = self.args.cut_mu_thres
+			# 对于每一对智能体i和j，对于均值向量mu中i对j的通信分布的每个元素，如果其绝对值小于cut_mu_thres或以概率prob被选中，则将ms中对应的元素设置为0。
 			r_thres = thres
 			mu = mu.numpy()
 			for i in range(self.n_agents):
@@ -276,13 +280,19 @@ class CateBCommFMAC:
 
 	def _test_communicate(self, bs, inputs, thres=0., prob=0.):
 		# shape = (bs * self.n_agents, -1)
+		# 每个智能体从其他智能体那里接收到的信息由一个正态分布生成，均值和方差均是该智能体当前状态的函数
+		# 执行模型的前向传播，计算出均值向量mu和标准差向量sigma
 		mu, sigma = self.comm(inputs)
 		normal_distribution = D.Normal(mu, sigma)
+		# 然后使用这两个向量构建一个正态分布，并使用它生成一个随机采样矩阵ms。
 		ms = normal_distribution.rsample()
 		if self.args.is_cur_mu:
 			ms = self._cut_mu(mu, ms, thres=thres, prob=prob)
 		message = ms.clone().view(bs, self.n_agents, self.n_agents, -1)
+		# 该张量被沿着第2个和第3个维度进行转置，以便代表每个智能体接收来自其他智能体的消息。
+		# 最后，该张量被展平成(bs * n_agents, -1)的形状，以便将它输入到神经网络的其余部分中进行处理。
 		message = message.permute(0, 2, 1, 3).contiguous().view(bs * self.n_agents, -1)
+		# 将ms向量转换为消息张量message，并返回(mu, sigma)元组，消息张量message和随机采样矩阵ms。
 		return (mu, sigma), message, ms
 
 	def _communicate(self, bs, inputs):
